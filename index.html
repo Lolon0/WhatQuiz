@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>SuperQuiz Deluxe v4 (Online)</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/opendyslexic@2.1.0/medium.min.css" rel="stylesheet">
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+<!-- Socket.IO Client -->
+<script src="/socket.io/socket.io.js"></script>
+
+<style>
+  :root{ --primary:#6366f1; --primary-dark:#4f46e5; --secondary:#ec4899; --bg-gradient:linear-gradient(135deg, #667eea 0%, #764ba2 100%); --glass-bg:rgba(255,255,255,0.95); --radius:16px; --text-main:#1f2937; }
+  .dark { --glass-bg:rgba(30,41,59,0.95); --text-main:#f3f4f6; }
+  .dyslexic * { font-family:'OpenDyslexic',sans-serif!important; letter-spacing:0.15em!important; line-height:1.6!important; }
+  
+  * { box-sizing:border-box; outline:none; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; font-family:'Outfit',sans-serif; background:var(--bg-gradient); color:var(--text-main); min-height:100vh; display:flex; flex-direction:column; overflow-x:hidden; }
+  
+  .container { max-width:900px; width:95%; margin:40px auto; position:relative; z-index:10; }
+  .card { background:var(--glass-bg); padding:24px; border-radius:var(--radius); box-shadow:0 10px 40px -10px rgba(0,0,0,0.2); animation:slideUp 0.4s ease; }
+  @keyframes slideUp { from{opacity:0;transform:translateY(20px);} to{opacity:1;transform:translateY(0);} }
+
+  header.appbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:30px; background:rgba(255,255,255,0.1); padding:15px 25px; border-radius:50px; border:1px solid rgba(255,255,255,0.2); backdrop-filter:blur(5px); }
+  .brand { font-weight:800; font-size:24px; color:white; display:flex; gap:10px; align-items:center; }
+  
+  h1,h2,h3 { margin:0 0 10px 0; font-weight:700; }
+  .btn { padding:12px 20px; border-radius:12px; border:none; cursor:pointer; font-weight:600; font-family:inherit; transition:0.2s; display:inline-flex; align-items:center; gap:8px; font-size:0.95rem; }
+  .btn:active { transform:scale(0.95); }
+  .btn.primary { background:linear-gradient(135deg,var(--primary),var(--primary-dark)); color:white; }
+  .btn.secondary { background:var(--secondary); color:white; }
+  .btn.ghost { background:transparent; border:1px solid rgba(0,0,0,0.1); }
+  .btn.danger { background:#fee2e2; color:#b91c1c; }
+  
+  input,textarea,select { width:100%; padding:14px; border-radius:12px; border:2px solid transparent; background:rgba(0,0,0,0.05); margin-bottom:15px; font-family:inherit; }
+  input:focus { background:white; border-color:var(--primary); }
+
+  .grid { display:grid; gap:20px; }
+  .grid.cols-3 { grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); }
+  .flex { display:flex; gap:10px; align-items:center; }
+  .space-between { justify-content:space-between; }
+  .center { text-align:center; justify-content:center; }
+  .hidden { display:none!important; }
+  
+  .neocard { background:rgba(255,255,255,0.5); border-radius:12px; padding:15px; border:1px solid rgba(0,0,0,0.05); margin-bottom:10px; position:relative; }
+  .delete-x { position:absolute; top:10px; right:10px; color:var(--danger); cursor:pointer; }
+
+  /* GAME UI */
+  .answer-btn { width:100%; text-align:left; margin-bottom:10px; background:white; padding:16px; border-radius:12px; border:2px solid transparent; transition:0.2s; cursor:pointer; }
+  .answer-btn:hover { border-color:var(--primary); transform:translateX(5px); }
+  .answer-btn.selected { background:rgba(99,102,241,0.1); border-color:var(--primary); color:var(--primary-dark); font-weight:bold; }
+  
+  /* TOAST */
+  #toasts { position:fixed; top:20px; right:20px; z-index:9999; display:flex; flex-direction:column; gap:10px; }
+  .toast { background:white; padding:12px 20px; border-radius:12px; border-left:5px solid var(--primary); box-shadow:0 5px 15px rgba(0,0,0,0.1); animation:slideIn 0.3s; }
+  @keyframes slideIn { from{transform:translateX(100%);} to{transform:translateX(0);} }
+
+  /* RESPONSIVE */
+  @media(max-width:600px){ .grid.cols-3 { grid-template-columns:1fr; } header.appbar{flex-direction:column; gap:10px;} }
+</style>
+</head>
+<body>
+<div id="toasts"></div>
+<div class="container">
+    <header class="appbar">
+        <div class="brand"><i class="ph ph-lightning-fill"></i> SuperQuiz V4</div>
+        <div id="controls" class="flex"></div>
+    </header>
+
+    <main>
+        <!-- LOGIN -->
+        <section id="view-login" class="card center">
+            <div style="font-size:50px;">👋</div>
+            <h2>Connexion</h2>
+            <input id="login-name" placeholder="Votre Prénom" />
+            <input id="login-room" placeholder="Code Salle (pour élèves)" />
+            <div class="flex center" style="margin-top:20px;">
+                <button onclick="login('teacher')" class="btn primary">Professeur</button>
+                <button onclick="login('student')" class="btn secondary">Élève</button>
+            </div>
+        </section>
+
+        <!-- TEACHER DASHBOARD -->
+        <section id="view-teacher" class="card hidden">
+            <div class="flex space-between">
+                <h2>Mes Quiz</h2>
+                <div class="flex">
+                    <button onclick="newQuiz()" class="btn primary"><i class="ph ph-plus"></i> Nouveau</button>
+                    <button onclick="logout()" class="btn ghost"><i class="ph ph-sign-out"></i></button>
+                </div>
+            </div>
+            <div id="quiz-list" class="grid cols-3" style="margin-top:20px;"></div>
+        </section>
+
+        <!-- EDITOR -->
+        <section id="view-editor" class="card hidden">
+            <div class="flex space-between"><h2>Éditeur</h2> <button onclick="saveQuiz()" class="btn primary">Sauvegarder</button></div>
+            <input id="edit-title" placeholder="Titre du Quiz" style="font-weight:bold; font-size:1.2em;" />
+            <textarea id="edit-desc" placeholder="Description"></textarea>
+            <div id="edit-questions"></div>
+            <button onclick="addQuestion()" class="btn ghost" style="width:100%; margin-top:20px;">+ Ajouter Question</button>
+        </section>
+
+        <!-- LIVE LOBBY (TEACHER) -->
+        <section id="view-lobby-teacher" class="card hidden center">
+            <h2>Salle d'attente</h2>
+            <div style="font-size:3em; font-weight:800; color:var(--primary); letter-spacing:5px; margin:20px 0;" id="lobby-code">CODE</div>
+            <p>Partagez ce code avec vos élèves</p>
+            <div class="neocard" style="max-width:400px; margin:0 auto;">
+                <h3>Joueurs connectés (<span id="player-count">0</span>)</h3>
+                <div id="player-list" style="max-height:150px; overflow-y:auto;"></div>
+            </div>
+            <button onclick="startLiveGame()" class="btn primary" style="margin-top:20px; font-size:1.2em;">LANCER LE QUIZ 🚀</button>
+        </section>
+
+        <!-- LIVE GAME (TEACHER) -->
+        <section id="view-live-teacher" class="card hidden">
+            <div class="flex space-between">
+                <span class="btn ghost small">Question <span id="live-q-idx">1</span></span>
+                <button onclick="endLiveGame()" class="btn danger">Arrêter</button>
+            </div>
+            <h2 id="live-q-text" style="font-size:1.5em; text-align:center; margin:30px 0;">Question...</h2>
+            <div class="grid cols-2" id="live-stats-grid"></div>
+            <button onclick="nextLiveQuestion()" class="btn primary" style="width:100%; margin-top:30px;">Question Suivante >></button>
+        </section>
+
+        <!-- STUDENT WAITING -->
+        <section id="view-student-wait" class="card hidden center">
+            <h2>Bienvenue <span id="student-name-display"></span></h2>
+            <p>En attente du professeur...</p>
+            <div class="neocard">Code Salle: <b id="student-room-display"></b></div>
+            <div style="font-size:40px; margin-top:20px;" class="pulse">⏳</div>
+        </section>
+
+        <!-- STUDENT GAME -->
+        <section id="view-student-game" class="card hidden">
+            <h3 id="student-q-text">Question ?</h3>
+            <div id="student-answers" style="margin-top:20px;"></div>
+            <div id="student-feedback" class="hidden center" style="margin-top:20px; font-weight:bold;">Réponse envoyée !</div>
+        </section>
+        
+        <!-- RESULTS SCREEN -->
+        <section id="view-results" class="card hidden center">
+            <h1>🏆 Résultats</h1>
+            <div id="final-scoreboard"></div>
+            <button onclick="location.reload()" class="btn primary">Retour Accueil</button>
+        </section>
+    </main>
+</div>
+
+<script>
+const socket = io();
+let currentUser = { name:'', type:'' };
+let currentQuiz = null;
+let currentRoom = null;
+let quizzes = JSON.parse(localStorage.getItem('sq_quizzes') || '[]');
+
+// --- NAVIGATION ---
+function showView(id){
+    document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
+    document.getElementById('view-'+id).classList.remove('hidden');
+}
+
+// --- LOGIN ---
+function login(type){
+    const name = document.getElementById('login-name').value;
+    if(!name) return alert("Nom requis");
+    currentUser = { name, type };
+    
+    if(type === 'teacher'){
+        renderQuizList();
+        showView('teacher');
+    } else {
+        const room = document.getElementById('login-room').value.toUpperCase();
+        if(!room) return alert("Code salle requis");
+        currentRoom = room;
+        socket.emit('join-room', { room, name });
+        document.getElementById('student-name-display').innerText = name;
+        document.getElementById('student-room-display').innerText = room;
+        showView('student-wait');
+    }
+}
+function logout(){ location.reload(); }
+
+// --- TEACHER: QUIZ MANAGEMENT ---
+function renderQuizList(){
+    const list = document.getElementById('quiz-list');
+    list.innerHTML = '';
+    quizzes.forEach((q, idx) => {
+        list.innerHTML += `
+        <div class="neocard">
+            <h3>${q.title}</h3>
+            <div class="small">${q.questions.length} questions</div>
+            <div class="flex" style="margin-top:10px;">
+                <button onclick="hostGame(${idx})" class="btn primary small">Lancer Live</button>
+                <button onclick="editQuiz(${idx})" class="btn ghost small">Modifier</button>
+                <button onclick="deleteQuiz(${idx})" class="btn danger small">X</button>
+            </div>
+        </div>`;
+    });
+}
+
+function newQuiz(){ currentQuiz = { title:'', questions:[] }; renderEditor(); showView('editor'); }
+function editQuiz(idx){ currentQuiz = quizzes[idx]; renderEditor(); showView('editor'); }
+function deleteQuiz(idx){ if(confirm('Supprimer ?')){ quizzes.splice(idx,1); saveLocal(); renderQuizList(); } }
+function saveLocal(){ localStorage.setItem('sq_quizzes', JSON.stringify(quizzes)); }
+
+// --- EDITOR ---
+function renderEditor(){
+    document.getElementById('edit-title').value = currentQuiz.title;
+    document.getElementById('edit-desc').value = currentQuiz.desc || '';
+    const cont = document.getElementById('edit-questions');
+    cont.innerHTML = '';
+    currentQuiz.questions.forEach((q, i) => {
+        let answersHtml = '';
+        q.answers.forEach((a, ai) => {
+            answersHtml += `<input value="${a}" onchange="updateAns(${i},${ai},this.value)" placeholder="Réponse ${ai+1}" style="margin-bottom:5px;">`;
+        });
+        cont.innerHTML += `
+        <div class="neocard">
+            <div class="delete-x" onclick="delQ(${i})">X</div>
+            <b>Q${i+1}</b>
+            <input value="${q.question}" onchange="updateQ(${i},this.value)" placeholder="Question">
+            ${answersHtml}
+            <div class="small">Correct index: <input type="number" value="${q.correct}" onchange="updateCor(${i},this.value)" style="width:50px;"></div>
+        </div>`;
+    });
+}
+function addQuestion(){ currentQuiz.questions.push({ question:'', answers:['','','',''], correct:0 }); renderEditor(); }
+function saveQuiz(){
+    currentQuiz.title = document.getElementById('edit-title').value;
+    currentQuiz.desc = document.getElementById('edit-desc').value;
+    // Update or add
+    const idx = quizzes.findIndex(q => q === currentQuiz);
+    if(idx === -1) quizzes.push(currentQuiz);
+    saveLocal();
+    showView('teacher');
+    renderQuizList();
+}
+// Editor helpers
+window.updateQ = (i,v) => currentQuiz.questions[i].question = v;
+window.updateAns = (i,ai,v) => currentQuiz.questions[i].answers[ai] = v;
+window.updateCor = (i,v) => currentQuiz.questions[i].correct = parseInt(v);
+window.delQ = (i) => { currentQuiz.questions.splice(i,1); renderEditor(); };
+
+// --- SOCKET EVENTS (TEACHER) ---
+function hostGame(idx){
+    const roomCode = Math.random().toString(36).substring(2,7).toUpperCase();
+    currentRoom = roomCode;
+    currentQuiz = quizzes[idx];
+    
+    socket.emit('create-room', { room: roomCode, quiz: currentQuiz });
+    document.getElementById('lobby-code').innerText = roomCode;
+    showView('lobby-teacher');
+    
+    socket.on('player-joined', (players) => {
+        document.getElementById('player-count').innerText = players.length;
+        document.getElementById('player-list').innerHTML = players.map(p => `<div>👤 ${p}</div>`).join('');
+    });
+}
+
+function startLiveGame(){
+    socket.emit('start-game', currentRoom);
+    showView('live-teacher');
+}
+
+function nextLiveQuestion(){
+    socket.emit('next-question', currentRoom);
+}
+
+function endLiveGame(){
+    socket.emit('end-game', currentRoom);
+    showView('teacher');
+}
+
+// Teacher Game Updates
+socket.on('update-teacher-view', (data) => {
+    // Show current question stats
+    document.getElementById('live-q-text').innerText = data.question.question;
+    document.getElementById('live-q-idx').innerText = data.index + 1;
+    
+    // Show live answers count (simplified)
+    const grid = document.getElementById('live-stats-grid');
+    grid.innerHTML = data.question.answers.map((a, i) => `
+        <div class="neocard center">
+            <b>${a}</b>
+            <div style="font-size:20px; color:var(--primary);">${data.stats[i] || 0} votes</div>
+        </div>
+    `).join('');
+});
+
+// --- SOCKET EVENTS (STUDENT) ---
+socket.on('game-started', () => {
+    showView('student-game');
+});
+
+socket.on('new-question', (q) => {
+    document.getElementById('student-q-text').innerText = q.question;
+    const ansDiv = document.getElementById('student-answers');
+    ansDiv.innerHTML = '';
+    document.getElementById('student-feedback').classList.add('hidden');
+    ansDiv.classList.remove('hidden');
+    
+    q.answers.forEach((a, i) => {
+        ansDiv.innerHTML += `<button class="answer-btn" onclick="sendAnswer(${i})">${a}</button>`;
+    });
+});
+
+function sendAnswer(idx){
+    socket.emit('submit-answer', { room: currentRoom, answerIdx: idx });
+    document.getElementById('student-answers').classList.add('hidden');
+    document.getElementById('student-feedback').classList.remove('hidden');
+}
+
+socket.on('game-ended', (results) => {
+    showView('results');
+    const board = document.getElementById('final-scoreboard');
+    board.innerHTML = results.map((p, i) => `
+        <div class="neocard flex space-between">
+            <b>#${i+1} ${p.name}</b>
+            <span>${p.score} pts</span>
+        </div>
+    `).join('');
+});
+
+</script>
+</body>
+</html>
